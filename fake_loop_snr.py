@@ -21,6 +21,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
+from typing import Union, Optional  # 新增：类型注解支持
 
 # ---------------------------
 # Config
@@ -32,7 +33,7 @@ from diffusers.schedulers import FlowMatchEulerDiscreteScheduler
 # 3) NUM_ITERS 控制总迭代次数，用来累积足够统计量绘制直方图。
 # 4) ALPHA 是 SD3 的分辨率缩放系数，α>1 时意味着高分辨率，λ 会整体平移 −2logα。
 # 5) DEVICE 指明计算应运行于 CPU 还是 GPU。
-SAVE_NAME = "style_friendly_"
+SAVE_NAME = "compute_style_friendly_"
 #Style Friendly
 MU_LAMBDA   = -6.0
 SIGMA_LAMBDA = 2.0
@@ -49,6 +50,11 @@ NUM_ITERS   = 1000                 # total samples = 76,800
 ALPHA       = 1.0                 # √(m/n). If >1, shifts λ toward lower logSNR by -2logα (SD3)
 DEVICE      = torch.device("cpu") # or "cuda" if available
 
+# ---- 派生 logit-normal 参数（连接 diffusers 标准采样函数） ----
+LOGIT_MEAN  = -(MU_LAMBDA - 2.0 * math.log(ALPHA)) / 2.0
+LOGIT_STD   = SIGMA_LAMBDA / 2.0
+WEIGHTING_SCHEME = "logit_normal"
+MODE_SCALE  = None  # 仅在 weighting_scheme=="mode" 时使用
 
 
 # ---------------------------
@@ -97,6 +103,32 @@ def p_t_from_normal_lambda(t, mu, sigma):
     jac = 2.0 / (t * (1.0 - t))
     return normal_pdf(lam, mu, sigma) * jac
 
+# ----- 新增函数: compute_density_for_timestep_sampling -----
+def compute_density_for_timestep_sampling(
+    weighting_scheme: str,
+    batch_size: int,
+    logit_mean: float = None,
+    logit_std: float = None,
+    mode_scale: float = None,
+    device: Union[torch.device, str] = "cpu",
+    generator: Optional[torch.Generator] = None,
+):
+    """
+    计算 SD3 训练中 time step 采样密度。
+
+    源自 diffusers PR https://github.com/huggingface/diffusers/pull/8528。
+    论文参考：https://huggingface.co/papers/2403.03206v1。
+    """
+    if weighting_scheme == "logit_normal":
+        u = torch.normal(mean=logit_mean, std=logit_std, size=(batch_size,), device=device, generator=generator)
+        u = torch.nn.functional.sigmoid(u)
+    elif weighting_scheme == "mode":
+        u = torch.rand(size=(batch_size,), device=device, generator=generator)
+        u = 1 - u - mode_scale * (torch.cos(math.pi * u / 2) ** 2 - 1 + u)
+    else:
+        u = torch.rand(size=(batch_size,), device=device, generator=generator)
+    return u
+
 # ---------------------------
 # Fake loop (no model, no loss)
 # ---------------------------
@@ -107,12 +139,22 @@ all_lambda = []
 all_t = []
 
 for it in range(NUM_ITERS):
-    lam, t = sample_lambda_and_t(BATCH_SIZE, MU_LAMBDA, SIGMA_LAMBDA, alpha=ALPHA, device=DEVICE)
+    # 使用 diffusers 标准采样密度函数得到 t
+    t = compute_density_for_timestep_sampling(
+        weighting_scheme=WEIGHTING_SCHEME,
+        batch_size=BATCH_SIZE,
+        logit_mean=LOGIT_MEAN,
+        logit_std=LOGIT_STD,
+        mode_scale=MODE_SCALE,
+        device=DEVICE,
+    )
 
-    # (Optional but requested) Register this batch's t with the scheduler,
-    # so the pipeline could follow the same custom timestep grid if you wished.
+    # 由 t 反算 λ
+    lam = 2.0 * torch.log((1.0 - t) / t)
+
+    # 注册本 batch 的 timestep 网格（降序）
     t_steps = torch.sort(t, descending=True).values
-    scheduler.set_timesteps(timesteps=t_steps.detach().cpu().tolist())  # Accepts custom timesteps. See docs.  # noqa
+    scheduler.set_timesteps(timesteps=t_steps.detach().cpu().tolist())  # noqa
 
     all_lambda.append(lam.cpu())
     all_t.append(t.cpu())
