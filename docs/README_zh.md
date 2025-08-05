@@ -14,7 +14,7 @@
 
 | 文件 | 功能 |
 |------|------|
-| `fake_loop_snr.py` | “伪训练”循环，从自定义的 Normal 分布中采样 λ，映射到时间步 \(t = \sigma(-\lambda/2)\)，并通过 `diffusers.schedulers.FlowMatchEulerDiscreteScheduler` 注册自定义网格。脚本累计数万样本并生成三张诊断图（λ 直方图、t 直方图、目标 λ PDF）。 |
+| `fake_loop_snr.py` | “伪训练”循环，从自定义的 Normal 分布中采样 λ，映射到时间步 $t = \sigma(-\lambda/2)$，并通过 `diffusers.schedulers.FlowMatchEulerDiscreteScheduler` 注册自定义网格。脚本累计数万样本并生成三张诊断图（λ 直方图、t 直方图、目标 λ PDF）。 |
 | `plot_style_friendly_logsnr.py` | 纯绘图库脚本，生成多个 Normal 分布的高质量曲线图，可复现 *Style-Friendly* 论文 Fig.2 中的四条曲线，并支持通过 JSON 参数自定义曲线。 |
 
 上述脚本与模型权重无关，仅依赖 NumPy、Matplotlib，以及（仅 `fake_loop_snr.py` 需要）*diffusers* 与 *PyTorch* **≥1.13**。默认运行于 CPU，GPU 可选。
@@ -54,9 +54,9 @@
 
 核心流程：
 
-1. 从 \(\mathcal{N}(\mu, \sigma^2)\) 采样一批 λ；
-2. 可选：应用分辨率平移（SD3 规则）\(\lambda \leftarrow \lambda - 2\log\alpha\)，其中 \(\alpha = \sqrt{m/n}\)；
-3. 映射至扩散时间步 \(t = \sigma(-\lambda/2)\)；
+1. 从 $\mathcal{N}(\mu, \sigma^2)$ 采样一批 λ；
+2. 可选：应用分辨率平移（SD3 规则）$\lambda \leftarrow \lambda - 2\log\alpha$，其中 $\alpha = \sqrt{m/n}$；
+3. 映射至扩散时间步 $t = \sigma(-\lambda/2)$；
 4. 将排序后的 t 传入 `scheduler.set_timesteps()`；
 5. 累积样本，用于绘制统计图。
 
@@ -90,10 +90,10 @@ python fake_loop_snr.py
 
 此脚本是一个 Matplotlib CLI 封装，默认绘制四条 Normal 分布曲线：
 
-1. SD3 / FLUX 训练分布：\(\mathcal{N}(\mu = -2\log3, \sigma = 2)\)
-2. Style-friendly: \(\mathcal{N}(\mu = -6, \sigma = 1)\)
-3. Style-friendly: \(\mathcal{N}(\mu = -6, \sigma = 2)\)
-4. Style-friendly: \(\mathcal{N}(\mu = -6, \sigma = 3)\)
+1. SD3 / FLUX 训练分布：$\mathcal{N}(\mu = -2\log 3, \sigma = 2)$
+2. Style-friendly: $\mathcal{N}(\mu = -6, \sigma = 1)$
+3. Style-friendly: $\mathcal{N}(\mu = -6, \sigma = 2)$
+4. Style-friendly: $\mathcal{N}(\mu = -6, \sigma = 3)$
 
 基础用法：
 
@@ -121,7 +121,7 @@ python plot_style_friendly_logsnr.py \
 
 多分辨率训练时，SD3 使用固定的 log-SNR 平移：
 
-\[ \Delta\lambda = -2\log\alpha, \qquad \alpha = \sqrt{m/n} \]
+$\Delta\lambda = -2\log\alpha, \quad \alpha = \sqrt{m/n}$
 
 在 `fake_loop_snr.py` 中将 `ALPHA>1` 即可观察到这一常数平移并打印对应值。
 
@@ -138,10 +138,10 @@ python plot_style_friendly_logsnr.py \
 
 | 文件 | 内容 | 解释 |
 |------|------|------|
-| `style_friendly_lambda_hist_verify.png` | λ 直方图与目标 Normal PDF 对比 | 验证采样器是否遵循 \(\mathcal{N}(\mu=-6,\sigma=2)\) |
-| `style_friendly_t_hist_verify.png` | t 直方图与解析 *p*(t) 对比 | 验证换元推导的正确性 |
+| `style_friendly_lambda_hist_verify.png` | λ 直方图与目标 Normal PDF 对比 | 验证采样器是否遵循 $\mathcal{N}(\mu=-6,\sigma=2)$ |
+| `style_friendly_t_hist_verify.png` | t 直方图与解析 *p*(t) 对比 | 验证换元推导的正确性 $p(t)=\text{Normal}(\lambda(t))|\tfrac{d\lambda}{dt}|$ |
 | `style_friendly_logsnr_pdf.png` | 目标 λ PDF，阴影标注高噪声区 (λ ≤ −5) | 高噪声区通常出现风格化特征 |
-| `sd3_flux_lambda_hist_verify.png` | SD3 / Flux 的 λ 直方图 | 确认 SD3 训练采样器形状 |
+| `sd3_flux_lambda_hist_verify.png` | SD3 / Flux 的 λ 直方图 | 确认 SD3 训练采样器形状（$\mu=-2\log 3,\sigma=2$） |
 | `sd3_flux_t_hist_verify.png` | SD3 / Flux 的 t 直方图 | 与对应解析密度对齐 |
 | `sd3_flux_logsnr_pdf.png` | SD3 / Flux 的 λ PDF | 相比 Style-friendly，将更多概率质量分配于高 SNR |
 
